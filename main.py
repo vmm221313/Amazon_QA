@@ -67,8 +67,8 @@ def build_model(args, GloVe):
 	sequence_input = Input(shape=(args.max_seq_len,), dtype='int32')
 	embedded_sequences = GloVe(sequence_input)
 
-	x = Bidirectional(LSTM(1024, return_sequences=True), merge_mode='concat')(embedded_sequences)
-	x = TimeDistributed(Dense(128, activation='relu'))(x)
+	x = Bidirectional(LSTM(1024, return_sequences=False), merge_mode='concat')(embedded_sequences)
+	#x = TimeDistributed(Dense(128, activation='relu'))(x)
 	x = Flatten()(x)
 	'''
 	x = Conv1D(1024, 5, activation='relu')(embedded_sequences) 
