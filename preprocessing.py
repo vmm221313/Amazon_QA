@@ -1,3 +1,4 @@
+import json
 import pickle
 import argparse
 import numpy as np
@@ -53,7 +54,13 @@ def process_data():
 	print('Shape of data tensor:', data.shape)
 	#print('Shape of label tensor:', labels.shape)
 
+def read_meta():
+	with open('data/meta_Automotive.json', 'r') as f:
+		meta = json.load(f)
 
+	print(meta.keys())
+
+ 
 if __name__ == '__main__':
 	parser = argparse.ArgumentParser() 
 	parser.add_argument('-function', type=str)

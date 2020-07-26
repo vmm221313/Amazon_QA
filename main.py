@@ -4,11 +4,11 @@ import numpy as np
 import pandas as po
 
 import tensorflow as tf
-from tensorflow.keras.models import Model
 from tensorflow.keras.utils import to_categorical
 from tensorflow.keras.preprocessing.text import Tokenizer
 from tensorflow.keras.preprocessing.sequence import pad_sequences
-from tensorflow.keras.layers import Embedding, Input, Dense, GlobalMaxPooling1D, Conv1D, MaxPooling1D, Flatten, TimeDistributed, LSTM, Bidirectional
+#from tensorflow.keras.layers import Embedding, Input, Dense, GlobalMaxPooling1D, Conv1D, MaxPooling1D, Flatten, TimeDistributed, LSTM, Bidirectional, Reshape
+from tensorflow.keras.layers import Embedding, Input, Dense, Conv2D, Reshape, MaxPooling2D, Flatten, Dropout
 
 from tensorflow.compat.v1 import ConfigProto
 from tensorflow.compat.v1 import InteractiveSession
@@ -42,7 +42,7 @@ def make_embedding_layer(args, tokenizer):
 		if embedding_vector is not None:
 			embedding_matrix[i] = embedding_vector
 
-	GloVe = Embedding(len(word_index) + 1, 300, weights=[embedding_matrix], input_length=args.max_seq_len, trainable=False)
+	GloVe = Embedding(len(word_index) + 1, 300, weights=[embedding_matrix], input_length=args.max_seq_len, trainable=True)
 
 	return GloVe
 
@@ -65,21 +65,13 @@ def get_train_val_test(args, df, tokenizer):
 
 def build_model(args, GloVe):
 	sequence_input = Input(shape=(args.max_seq_len,), dtype='int32')
-	embedded_sequences = GloVe(sequence_input)
-
-	x = Bidirectional(LSTM(1024, return_sequences=False), merge_mode='concat')(embedded_sequences)
-	#x = TimeDistributed(Dense(128, activation='relu'))(x)
+	
+	x = GloVe(sequence_input)
+	x = Reshape((50, 300, 1))(x)
+	x = Conv2D(256, 5, activation='tanh')(x)
+	x = MaxPooling2D((46, 296))(x)
 	x = Flatten()(x)
-	'''
-	x = Conv1D(1024, 5, activation='relu')(embedded_sequences) 
-	x = MaxPooling1D(5)(x)
-	x = Conv1D(1024, 5, activation='relu')(x)
-	x = MaxPooling1D(5)(x)
-	#x = Conv1D(1024, 5, activation='relu')(x)
-	#x = MaxPooling1D(5)(x)  # global max pooling
-	x = Flatten()(x)
-	x = Dense(1024, activation='relu')(x)
-	'''
+	x = Dropout(0.2)(x)
 	preds = Dense(2, activation='softmax')(x)
 
 	model = Model(sequence_input, preds)
@@ -105,14 +97,20 @@ def main(args):
 
 	earlystop = tf.keras.callbacks.EarlyStopping(monitor='val_loss', min_delta=0.001, patience=10)
 	
-	model.fit(X_train, y_train, validation_data=(X_val, y_val), epochs=100, batch_size=128, callbacks=[earlystop])
+	print(np.bincount(np.argmax(y_train, axis=1)))
+	print(np.bincount(np.argmax(y_val, axis=1)))
+	print(np.bincount(np.argmax(y_test, axis=1)))
+
+	#'''
+	model.fit(X_train, y_train, validation_data=(X_val, y_val), epochs=100, batch_size=32, callbacks=[earlystop], shuffle=True)
 
 	y_pred = model.predict(X_test)
+	#print(y_pred[:100])
 
 	y_pred = np.argmax(y_pred, axis = 1)
 	y_test = np.argmax(y_test, axis = 1)
 	print(f1_score(y_test, y_pred))
-
+	#'''
 
 if __name__ == '__main__':
 	parser = argparse.ArgumentParser() 
