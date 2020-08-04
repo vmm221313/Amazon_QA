@@ -4,6 +4,7 @@ import numpy as np
 import pandas as po
 
 import tensorflow as tf
+from tensorflow.keras.models import Model
 from tensorflow.keras.utils import to_categorical
 from tensorflow.keras.preprocessing.text import Tokenizer
 from tensorflow.keras.preprocessing.sequence import pad_sequences
@@ -75,7 +76,7 @@ def build_model(args, GloVe):
 	preds = Dense(2, activation='softmax')(x)
 
 	model = Model(sequence_input, preds)
-	optimizer = tf.keras.optimizers.Adam(lr=0.001)
+	optimizer = tf.keras.optimizers.Adam(lr=0.0001)
 
 	model.compile(loss='categorical_crossentropy', optimizer=optimizer, metrics=['accuracy'])
 
