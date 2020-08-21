@@ -1,3 +1,4 @@
+import os
 import pickle
 import argparse
 import numpy as np
@@ -74,7 +75,7 @@ def get_train_val_test(args, df, tokenizer):
 
 	return (X_train, y_train), (X_val,  y_val), (X_test, y_test)
 
-def build_model(args, GloVe):
+def build_model(args, GloVe, use_meta):
 	sequence_input = Input(shape=(args.max_seq_len, 2), dtype='int32')
 
 	text_in = sequence_input[:, :, 0]
@@ -93,7 +94,12 @@ def build_model(args, GloVe):
 	m = Flatten()(m)
 	m = Dropout(0.2)(m)
 	
-	out = tf.keras.backend.concatenate((x, m), axis=1)
+	if use_meta:
+		out = tf.keras.backend.concatenate((x, m), axis=1)
+	
+	else:
+		out = x
+
 	preds = Dense(2, activation='softmax')(out)
 
 	model = Model(sequence_input, preds)
@@ -105,8 +111,67 @@ def build_model(args, GloVe):
 
 	return model
 
+def preprocess_json(json_path, data_path):
+	print('Processed data for dataset not found, preprocessing json file {}'.format(json_path))
+
+	with open('data/data_v2/Auto_meta_qar.pkl', 'rb') as f:
+		data = pickle.load(f)
+
+	X = []
+	y = []
+
+	df = po.DataFrame()
+	for key in tqdm(data, total=len(data)):
+		row = data[key]
+
+		meta = ' '.join([row['title'], ' '.join(row['category']), ' '.join(row['description'])])
+		
+		for i in range(len(row['questions_answers'])):
+			df_row = {}
+			df_row['meta'] = meta
+
+			ques = row['questions_answers'][i][0]
+			reviews = ' '.join(row['questions_answers'][i][2])
+			df_row['text'] = ' '.join([ques, reviews])
+
+			target = row['questions_answers'][i][1]
+			if target == 'Y':
+				df_row['target'] = 1 
+			elif target == 'N':
+				df_row['target'] = 0
+			else:
+				raise ValueError
+		
+			df = df.append(df_row, ignore_index=True)
+
+	print('Saved Processed data at {}'.format(data_path))
+	
+	df.to_csv(data_path, index=False)
+
+def get_data(dataset_name):
+	if dataset_name == 'auto':
+		data_path = 'data/Auto_meta_qar.csv'
+		json_path = 'data/raw_json_data/Auto_meta_qar.pkl'
+	elif dataset_name == 'electronics':
+		data_path = 'data/electronics_meta_qar.csv'
+		json_path = 'data/raw_json_data/electronics_meta_qar.pkl'
+	elif dataset_name == 'home':
+		data_path = 'data/home_meta_qar.csv'
+		json_path = 'data/raw_json_data/home_meta_qar.pkl'
+
+	if not os.path.exists(data_path):
+		preprocess_data(json_path, data_path)
+
+	print('Loading dataset {}'.format(data_path))
+	df = po.read_csv(data_path).sample(frac=1)
+
+	return df
+
 def main(args):
-	df = po.read_csv(args.data_path).sample(frac=1)
+	print('Running CNN model for {} dataset'.format(args.dataset_name))
+	print('Using Metadata - {}'.format(args.use_meta))
+
+	df = get_data(args.dataset_name)
 
 	tokenizer = fit_tokenizer(args, df)
 	GloVe = make_embedding_layer(args, tokenizer)
@@ -114,25 +179,46 @@ def main(args):
 	(X_train, y_train), (X_val,  y_val), (X_test, y_test) = get_train_val_test(args, df, tokenizer)
 
 	#'''
-	model = build_model(args, GloVe)
+	model = build_model(args, GloVe, use_meta=args.use_meta)
 
 	earlystop = tf.keras.callbacks.EarlyStopping(monitor='val_loss', min_delta=0.001, patience=10)
+	model_checkpoint = tf.keras.callbacks.ModelCheckpoint(filepath='cnn_{}_{}_best_model.hdf5'.format(args.dataset_name, args.use_meta), monitor='val_loss', save_best_only=True, save_weights_only=True)
 
-	model.fit(X_train, y_train, validation_data=(X_val, y_val), epochs=100, batch_size=4, callbacks=[earlystop], shuffle=True)
+	hist = model.fit(X_train, y_train, validation_data=(X_val, y_val), epochs=100, batch_size=4, callbacks=[earlystop, model_checkpoint], shuffle=True)
+
+	os.makedirs('training_history', exist_ok=True)
+	with open('training_history/cnn_{}_{}_best_model.hdf5'.format(args.dataset_name, args.use_meta), 'wb') as f:
+		pickle.dump(hist.history, f)
 
 	y_pred = model.predict(X_test)
-	#print(y_pred[:100])
 
 	y_pred = np.argmax(y_pred, axis = 1)
 	y_test = np.argmax(y_test, axis = 1)
 	print(f1_score(y_test, y_pred))
+
+	if not os.path.exists('results.csv'):
+		results_df = po.DataFrame()
+	else:
+		results_df = po.read_csv('results.csv')
+
+	row = {}
+	row['model'] = 'cnn'
+	row['dataset_name'] = args.dataset_name
+	row['use_meta'] = args.use_meta
+	row['final f1_score'] = f1_score(y_test, y_pred)
+	results_df = results_df.append(row, ignore_index=True)
+	
+	results_df.to_csv('results.csv', index=False)
+
 	#'''
 
 if __name__ == '__main__':
 	parser = argparse.ArgumentParser() 
-	
-	parser.add_argument('-data_path', type=str, default='data/Auto_meta_qar.csv')
+		
+	parser.add_argument('-dataset_name', type=str, default='auto', choices=['auto', 'electronics', 'home'])
+	parser.add_argument('-use_meta', type=bool, default=False, choices=[True, False])
 
+	#parser.add_argument('-data_path', type=str, default='data/electronics_meta_qar.csv')
 	parser.add_argument('-vocab_size', type=int, default=1000000)
 	parser.add_argument('-max_seq_len', type=int, default=350) #for default size -> average + 3 stds of lengths is 350
 

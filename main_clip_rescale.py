@@ -149,8 +149,9 @@ def main(args):
 	
 	#'''
 	earlystop = tf.keras.callbacks.EarlyStopping(monitor='val_loss', min_delta=0.001, patience=10)
+	model_checkpoint = tf.keras.callbacks.ModelCheckpoint(filepath='clip_rescale_best_model.hdf5', monitor='val_loss', save_best_only=True, save_weights_only=True)
 
-	model.fit(X_train, y_train, validation_data=(X_val, y_val), epochs=100, batch_size=4, callbacks=[earlystop], shuffle=True)
+	model.fit(X_train, y_train, validation_data=(X_val, y_val), epochs=100, batch_size=4, callbacks=[earlystop, model_checkpoint], shuffle=True)
 
 	y_pred = model.predict(X_test)
 	#print(y_pred[:100])
